@@ -1,0 +1,20 @@
+import fs from 'fs'; import vm from 'vm';
+const core = fs.readFileSync(process.argv[2], 'utf8').match(/<script id="core">([\s\S]*?)<\/script>/)[1];
+const ctx = {crypto: globalThis.crypto}; vm.createContext(ctx);
+vm.runInContext(core + ';this.X={tlvParse,dolParse,parseHex,toHex};', ctx);
+const X = ctx.X, H = s => X.parseHex(s, 't'); let fail = 0; const ok = (n, c, i='') => { if(!c){ fail++; console.log('FAIL', n, i); } };
+let n = X.tlvParse(H('770E8202 7C00 9408 0801010110010200'));
+ok('gpo', n.length === 1 && n[0].children.length === 2 && n[0].children[1].tagHex === '94' && n[0].children[1].len === 8);
+n = X.tlvParse(H('9F2701 80 9F3602 002A'));
+ok('multibyte', n[0].tagHex === '9F27' && n[1].tagHex === '9F36' && !n[0].cons);
+const big = '90' + '81B0' + 'AB'.repeat(176); n = X.tlvParse(H('70' + '81B3' + big));
+ok('81 len', n[0].len === 179 && n[0].children[0].len === 176);
+n = X.tlvParse(H('9F7F82010' + '0' + 'CD'.repeat(256))); ok('82 len', n[0].len === 256 && n[0].tagHex === '9F7F', JSON.stringify(n[0].lenB));
+n = X.tlvParse(H('0000 5A08 4761739001010119 00FF')); ok('padding', n.length === 3 && n[0].pad && n[2].pad);
+n = X.tlvParse(H('5A09 47617390')); ok('overflow err', n[0].err && n[0].err.includes('남은'));
+n = X.tlvParse(H('70 05 5A08 4761')); ok('nested err', n[0].err);   // outer len exceeds
+n = X.tlvParse(H('70 04 5A08 4761')); ok('child err', n[0].children[0].err);
+n = X.tlvParse(H('BF0C 03 9F4D 00')); ok('BF0C', n[0].tagHex === 'BF0C' && n[0].children[0].tagHex === '9F4D' && n[0].children[0].len === 0);
+const d = X.dolParse(H('9F02069F03069F1A0295055F2A029A039C019F3704'));
+ok('dol', d.length === 8 && d[3].tag === '95' && d[3].len === 5 && d.reduce((s, x) => s + x.len, 0) === 29);
+console.log(fail ? fail + ' FAILED' : 'TLV ALL OK');
